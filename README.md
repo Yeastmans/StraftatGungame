@@ -9,7 +9,6 @@ Classic Gun Game mode for [STRAFTAT](https://store.steampowered.com/app/2412110/
 - **Respawn with correct weapon** — dead players respawn with whatever weapon they're up to
 - **Map spawners disabled** — no picking up random weapons off the ground
 - **Configurable** — set kill target, respawn delay, and full weapon order
-- **Host-side only** — only the host needs the mod installed
 
 ### Manual Install
 1. Install [BepInEx 5](https://thunderstore.io/c/straftat/p/BepInEx/BepInExPack/) for STRAFTAT
