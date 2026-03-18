@@ -76,7 +76,7 @@ Create the folder `libs\GameAssemblies\` inside the project directory if it does
 
 ## Step 4 — Open and build
 
-1. Open `GunGameMod.sln` (or `GunGameMod.csproj`) in Visual Studio
+1. Open `GunGameMod.csproj' in Visual Studio
 2. All references should resolve with no yellow warning triangles — if you see warnings, double-check that every DLL is in the correct `libs\` subfolder
 3. Set the build configuration to **Release** (dropdown in the toolbar)
 4. Build the solution: **Build** → **Build Solution** (`Ctrl+Shift+B`)
@@ -100,13 +100,4 @@ After the first launch with the mod installed, a config file is generated at:
 STRAFTAT\BepInEx\config\com.modder.gungame.cfg
 ```
 
-Open it in any text editor to change settings like kill count, respawn delay, or weapon order. Changes take effect next time you host a match.
-
-## Troubleshooting
-
-| Problem | Fix |
-|---------|-----|
-| Yellow warning triangles on references | Make sure all DLLs are in `libs\BepInEx\` and `libs\GameAssemblies\` with the exact filenames listed above |
-| Build error about target framework | Install the .NET Framework 4.8 targeting pack from the Visual Studio Installer |
-| Mod doesn't load in-game | Confirm BepInEx is installed correctly — you should see a `BepInEx\LogOutput.log` file after launching |
-| Mod loads but nothing happens | You must be the host (server) for Gun Game to activate |
+Open it in any text editor to change settings like kill count, respawn delay, or weapon order. Changes take effect next time you host a match
