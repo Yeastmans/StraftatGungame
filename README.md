@@ -7,7 +7,6 @@ Classic Gun Game mode for [STRAFTAT](https://store.steampowered.com/app/2412110/
 - **Full weapon progression** — cycle through 60+ weapons from pistols to melee, configurable via config file
 - **Automatic weapon swaps** — killer receives the next weapon immediately on kill
 - **Respawn with correct weapon** — dead players respawn with whatever weapon they're up to
-- **Late-join support** — players joining mid-match start at weapon index 0
 - **Map spawners disabled** — no picking up random weapons off the ground
 - **Configurable** — set kill target, respawn delay, and full weapon order
 - **Host-side only** — only the host needs the mod installed
