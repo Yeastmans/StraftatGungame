@@ -58,3 +58,9 @@ Requires:
 - .NET Framework 4.7.2
 - BepInEx 5 + Harmony
 - STRAFTAT game assemblies (Assembly-CSharp.dll, FishNet.Runtime.dll, etc.)
+## Disclamer 
+This project is partialy Vibecoded and may not work as intendend. 
+Anyone may use any code in the project to do whatever they want with it. 
+
+
+
