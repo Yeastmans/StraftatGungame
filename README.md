@@ -32,7 +32,7 @@ STRAFTAT/BepInEx/config/com.modder.gungame.cfg
 | `Weapons.Weapon Order` | *(full list)* | Comma-separated weapon progression — see below |
 
 ### Weapon Order
-To customize, edit `Weapon Order` in the config. Names must match the game's prefab names exactly. Leave empty to use the game's default weapon list.
+To customize, edit `Weapon Order` in the config. Names must match the game's prefab names exactly. 
 ```
 Gun, Glock, Revolver, Silenzzio, Webley, Keso, Bender, BeamLoad,
 Mac10, SMG, Bukanee, Dispenser, Yangtse, Hill_H15, Crisis, DF_Torrent, GlaiveGun,
