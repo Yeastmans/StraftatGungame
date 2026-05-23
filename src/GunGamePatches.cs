@@ -62,8 +62,6 @@ namespace GunGameMod
                 PatchPrefix(typeof(PlayerPickup), "RightHandDrop", nameof(PlayerPickup_RightHandDrop_Prefix));
                 PatchPrefix(typeof(PlayerPickup), "SwitchWeapons", nameof(PlayerPickup_SwitchWeapons_Prefix));
                 PatchPrefix(typeof(PlayerPickup), "LeftHandPickup", nameof(PlayerPickup_LeftHandPickup_Prefix));
-                PatchPostfixReflected(typeof(WeaponHandSpawner), "RpcLogic___SpawnObject_2587446063",
-                    nameof(WeaponHandSpawner_RpcLogic_SpawnObject_Postfix));
 
                 if (_miRpcLogic_DropObjectServer != null)
                 {
@@ -454,12 +452,6 @@ namespace GunGameMod
         public static bool PlayerPickup_SwitchWeapons_Prefix() => !GunGamePlugin.Enabled.Value;
 
         public static bool PlayerPickup_LeftHandPickup_Prefix() => !GunGamePlugin.Enabled.Value;
-
-        public static void WeaponHandSpawner_RpcLogic_SpawnObject_Postfix(WeaponHandSpawner __instance)
-        {
-            if (!GunGamePlugin.Enabled.Value) return;
-            GunGameWeaponManager.OnTeleportMineSpawnerPlaced(__instance);
-        }
 
         public static bool PlayerPickup_RpcLogic_DropObjectServer_Prefix(PlayerPickup __instance, GameObject obj, bool rightHand)
         {

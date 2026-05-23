@@ -69,7 +69,6 @@ namespace GunGameMod
         private static bool _initialSpawnDelayDone = false;
         private static Dictionary<int, int> _giveSequence = new Dictionary<int, int>();
         private static HashSet<int> _givingInProgress = new HashSet<int>();
-        private static Dictionary<int, int> _teleportMinePairBySpawner = new Dictionary<int, int>();
 
         public static bool IsGivingWeapon(int playerId) => _givingInProgress.Contains(playerId);
 
@@ -210,8 +209,8 @@ namespace GunGameMod
             if (playerGO == null) playerGO = pickup.transform.root.gameObject;
 
             GameObject prefab = GunGamePlugin.GetOrderedWeaponPrefab(weaponIndex);
-            bool giveBothHands = IsTeleportMinePrefab(prefab);
-            GameObject secondPrefab = giveBothHands ? null : GunGamePlugin.GetSecondWeaponPrefab(weaponIndex);
+            bool isTeleportMine = IsTeleportMinePrefab(prefab);
+            GameObject secondPrefab = isTeleportMine ? null : GunGamePlugin.GetSecondWeaponPrefab(weaponIndex);
 
             GameObject rightWeapon = null;
             GameObject leftWeapon = null;
@@ -220,9 +219,7 @@ namespace GunGameMod
             try
             {
                 rightWeapon = SpawnWeaponPrefab(nm, prefab, playerGO, out rightIb);
-                if (giveBothHands)
-                    leftWeapon = SpawnWeaponPrefab(nm, prefab, playerGO, out leftIb);
-                else if (secondPrefab != null)
+                if (secondPrefab != null)
                     leftWeapon = SpawnWeaponPrefab(nm, secondPrefab, playerGO, out leftIb);
             }
             catch (Exception)
@@ -234,7 +231,7 @@ namespace GunGameMod
             }
 
             yield return new WaitForSeconds(0.1f);
-            if (rightWeapon == null || ((giveBothHands || secondPrefab != null) && leftWeapon == null) || pickup == null)
+            if (rightWeapon == null || (secondPrefab != null && leftWeapon == null) || pickup == null)
             {
                 DespawnOrDestroy(rightWeapon);
                 DespawnOrDestroy(leftWeapon);
@@ -245,11 +242,8 @@ namespace GunGameMod
             CacheMethods();
 
             AssignWeaponToHand(pickup, rightWeapon, rightIb, playerGO, true);
-            if (giveBothHands || secondPrefab != null)
+            if (secondPrefab != null)
                 AssignWeaponToHand(pickup, leftWeapon, leftIb, playerGO, false);
-
-            if (giveBothHands)
-                RegisterTeleportMinePair(rightWeapon, leftWeapon);
 
             _givingInProgress.Remove(playerId);
         }
@@ -267,7 +261,7 @@ namespace GunGameMod
 
             var weaponScript = weapon.GetComponent<Weapon>();
             if (weaponScript != null && IsTeleportMinePrefab(weapon))
-                SetWeaponAmmo(weaponScript, 1);
+                SetWeaponAmmo(weaponScript, 2);
 
             return weapon;
         }
@@ -312,46 +306,6 @@ namespace GunGameMod
                    string.Equals(weaponName, "tptrap", StringComparison.Ordinal);
         }
 
-        private static void RegisterTeleportMinePair(GameObject rightWeapon, GameObject leftWeapon)
-        {
-            var rightSpawner = rightWeapon != null ? rightWeapon.GetComponent<WeaponHandSpawner>() : null;
-            var leftSpawner = leftWeapon != null ? leftWeapon.GetComponent<WeaponHandSpawner>() : null;
-            if (rightSpawner == null || leftSpawner == null)
-                return;
-
-            SetWeaponAmmo(rightSpawner, 1);
-            SetWeaponAmmo(leftSpawner, 1);
-
-            int rightId = rightSpawner.GetInstanceID();
-            int leftId = leftSpawner.GetInstanceID();
-            _teleportMinePairBySpawner[rightId] = leftId;
-            _teleportMinePairBySpawner[leftId] = rightId;
-        }
-
-        public static void OnTeleportMineSpawnerPlaced(WeaponHandSpawner spawner)
-        {
-            if (spawner == null || !IsTeleportMinePrefab(spawner.gameObject))
-                return;
-
-            int spawnerId = spawner.GetInstanceID();
-            if (!_teleportMinePairBySpawner.TryGetValue(spawnerId, out int pairedSpawnerId))
-                return;
-
-            int placedMineId = GetTeleportLinkOtherTrapNob(spawner.gameObject);
-            if (placedMineId < 0)
-                return;
-
-            foreach (var otherSpawner in UnityEngine.Object.FindObjectsOfType<WeaponHandSpawner>(true))
-            {
-                if (otherSpawner == null || otherSpawner.GetInstanceID() != pairedSpawnerId)
-                    continue;
-
-                if (GetTeleportLinkOtherTrapNob(otherSpawner.gameObject) < 0)
-                    SetTeleportLinkOtherTrapNob(otherSpawner.gameObject, placedMineId);
-                break;
-            }
-        }
-
         private static bool HasUnplacedTeleportMine(PlayerPickup pickup)
         {
             if (pickup == null)
@@ -374,49 +328,6 @@ namespace GunGameMod
         {
             try { weapon.currentAmmo = ammo; } catch { }
             try { weapon.sync___set_value_currentAmmo(ammo, true); } catch { }
-        }
-
-        private static int GetTeleportLinkOtherTrapNob(GameObject weapon)
-        {
-            var link = GetTeleportLinkComponent(weapon);
-            if (link == null)
-                return -1;
-
-            try
-            {
-                var field = link.GetType().GetField("otherTrapNob", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (field != null)
-                    return (int)field.GetValue(link);
-            }
-            catch { }
-
-            return -1;
-        }
-
-        private static void SetTeleportLinkOtherTrapNob(GameObject weapon, int value)
-        {
-            var link = GetTeleportLinkComponent(weapon);
-            if (link == null)
-                return;
-
-            try
-            {
-                var field = link.GetType().GetField("otherTrapNob", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                field?.SetValue(link, value);
-            }
-            catch { }
-        }
-
-        private static Component GetTeleportLinkComponent(GameObject weapon)
-        {
-            if (weapon == null)
-                return null;
-
-            foreach (var component in weapon.GetComponents<Component>())
-                if (component != null && component.GetType().Name == "TPLink")
-                    return component;
-
-            return null;
         }
 
         private static void DespawnOrDestroy(GameObject weapon)
