@@ -191,56 +191,107 @@ namespace GunGameMod
             if (playerGO == null) playerGO = pickup.transform.root.gameObject;
 
             GameObject prefab = GunGamePlugin.GetOrderedWeaponPrefab(weaponIndex);
+            bool giveBothHands = IsTeleportMinePrefab(prefab);
 
-            GameObject weapon = null;
-            NetworkObject netObj = null;
-            ItemBehaviour ib = null;
+            GameObject rightWeapon = null;
+            GameObject leftWeapon = null;
+            ItemBehaviour rightIb = null;
+            ItemBehaviour leftIb = null;
             try
             {
-                weapon = UnityEngine.Object.Instantiate(prefab, playerGO.transform.position, playerGO.transform.rotation);
-                ib = weapon.GetComponent<ItemBehaviour>();
-                netObj = weapon.GetComponent<NetworkObject>();
-                if (ib != null) ib.dispenserStart = true;
-                var rb = weapon.GetComponent<Rigidbody>();
-                if (rb != null) { rb.isKinematic = true; rb.useGravity = false; }
-                nm.ServerManager.Spawn(weapon);
+                rightWeapon = SpawnWeaponPrefab(nm, prefab, playerGO, out rightIb);
+                if (giveBothHands)
+                    leftWeapon = SpawnWeaponPrefab(nm, prefab, playerGO, out leftIb);
             }
             catch (Exception)
             {
+                DespawnOrDestroy(rightWeapon);
+                DespawnOrDestroy(leftWeapon);
                 _givingInProgress.Remove(playerId);
                 yield break;
             }
 
             yield return new WaitForSeconds(0.1f);
-            if (weapon == null || pickup == null)
+            if (rightWeapon == null || (giveBothHands && leftWeapon == null) || pickup == null)
             {
+                DespawnOrDestroy(rightWeapon);
+                DespawnOrDestroy(leftWeapon);
                 _givingInProgress.Remove(playerId);
                 yield break;
             }
 
             CacheMethods();
 
-            try { _miSetObjectInHandRpcLogic?.Invoke(pickup, new object[] { weapon, weapon.transform.position, weapon.transform.rotation, playerGO, true }); }
+            AssignWeaponToHand(pickup, rightWeapon, rightIb, playerGO, true);
+            if (giveBothHands)
+                AssignWeaponToHand(pickup, leftWeapon, leftIb, playerGO, false);
+
+            _givingInProgress.Remove(playerId);
+        }
+
+        private static GameObject SpawnWeaponPrefab(FishNet.Managing.NetworkManager nm, GameObject prefab, GameObject playerGO, out ItemBehaviour ib)
+        {
+            var weapon = UnityEngine.Object.Instantiate(prefab, playerGO.transform.position, playerGO.transform.rotation);
+            ib = weapon.GetComponent<ItemBehaviour>();
+            if (ib != null) ib.dispenserStart = true;
+
+            var rb = weapon.GetComponent<Rigidbody>();
+            if (rb != null) { rb.isKinematic = true; rb.useGravity = false; }
+
+            nm.ServerManager.Spawn(weapon);
+            return weapon;
+        }
+
+        private static void AssignWeaponToHand(PlayerPickup pickup, GameObject weapon, ItemBehaviour ib, GameObject playerGO, bool rightHand)
+        {
+            if (pickup == null || weapon == null)
+                return;
+
+            try { _miSetObjectInHandRpcLogic?.Invoke(pickup, new object[] { weapon, weapon.transform.position, weapon.transform.rotation, playerGO, rightHand }); }
             catch { }
 
-            if (weapon == null)
-            {
-                _givingInProgress.Remove(playerId);
-                yield break;
-            }
             if (ib != null) ib.dispenserStart = false;
 
             try
             {
-                pickup.sync___set_value_hasObjectInHand(true, true);
-                pickup.sync___set_value_objInHand(weapon, true);
+                if (rightHand)
+                {
+                    pickup.sync___set_value_hasObjectInHand(true, true);
+                    pickup.sync___set_value_objInHand(weapon, true);
+                }
+                else
+                {
+                    pickup.sync___set_value_hasObjectInLeftHand(true, true);
+                    pickup.sync___set_value_objInLeftHand(weapon, true);
+                }
             }
             catch { }
 
-            try { _miSetObjectInHandObserver?.Invoke(pickup, new object[] { weapon, weapon.transform.position, weapon.transform.rotation, playerGO, true }); }
+            try { _miSetObjectInHandObserver?.Invoke(pickup, new object[] { weapon, weapon.transform.position, weapon.transform.rotation, playerGO, rightHand }); }
             catch { }
+        }
 
-            _givingInProgress.Remove(playerId);
+        private static bool IsTeleportMinePrefab(GameObject prefab)
+        {
+            if (prefab == null)
+                return false;
+
+            string weaponName = prefab.name?.Replace("(Clone)", "").Trim();
+            return string.Equals(weaponName, "Teleport Mine", StringComparison.Ordinal) ||
+                   string.Equals(weaponName, "TPTrap", StringComparison.Ordinal) ||
+                   string.Equals(weaponName, "tptrap", StringComparison.Ordinal);
+        }
+
+        private static void DespawnOrDestroy(GameObject weapon)
+        {
+            if (weapon == null)
+                return;
+
+            var netObj = weapon.GetComponent<NetworkObject>();
+            if (netObj != null && netObj.IsSpawned)
+                try { InstanceFinder.ServerManager.Despawn(netObj); } catch { }
+            else
+                try { UnityEngine.Object.Destroy(weapon); } catch { }
         }
 
         internal static void DespawnHeldWeapon(PlayerPickup pickup)
