@@ -12,6 +12,7 @@ using USceneManager = UnityEngine.SceneManagement.SceneManager;
 namespace GunGameMod
 {
     [BepInPlugin(PluginGUID, PluginName, PluginVersion)]
+    [BepInDependency("com.koki.weapons", BepInDependency.DependencyFlags.SoftDependency)]
     public class GunGamePlugin : BaseUnityPlugin
     {
         public const string PluginGUID = "com.modder.gungame";
@@ -63,12 +64,11 @@ namespace GunGameMod
                 )
             );
             RespawnDelay = Config.Bind("General", "Respawn Delay", 3f, "Seconds before a dead player respawns.");
+            BindWeaponSlots();
 
             GunGamePatches.Apply();
             USceneManager.sceneLoaded += OnSceneLoaded;
         }
-
-        private void Start() => EnsureWeaponSlotsBound();
 
         private void OnEnable() { _instance = this; }
         private void OnDisable() { if (_instance == this) _instance = null; }
