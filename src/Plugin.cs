@@ -25,7 +25,6 @@ namespace GunGameMod
         public static ConfigEntry<bool> Enabled;
         public static ConfigEntry<int> KillsToWin;
         public static ConfigEntry<float> RespawnDelay;
-        public static ConfigEntry<string> WeaponOrder;
         public static ConfigEntry<string>[] WeaponSlots;
 
         public static bool MatchOver = false;
@@ -45,8 +44,6 @@ namespace GunGameMod
             "BaseballBat", "Stylus", "Nizeh", "JahvalMahmaerd", "BigFattyBro", "CurvedKnife", "Couperet", "Katana", "Flamberge", "DF_GodSword", "Impetus"
         };
 
-        private static string DefaultWeaponOrder => string.Join(",", DefaultWeaponNames);
-
         private void Awake()
         {
             Log = Logger;
@@ -63,12 +60,6 @@ namespace GunGameMod
                 )
             );
             RespawnDelay = Config.Bind("General", "Respawn Delay", 3f, "Seconds before a dead player respawns.");
-            WeaponOrder = Config.Bind(
-                "Legacy",
-                "Weapon Order",
-                DefaultWeaponOrder,
-                "Legacy comma-separated weapon progression. New installs should use the 66 dropdown entries in the Weapon Order section."
-            );
             BindWeaponSlots();
 
             GunGamePatches.Apply();
@@ -142,13 +133,6 @@ namespace GunGameMod
             if (WeaponSlots != null && WeaponSlots.Length > 0)
                 return WeaponSlots.Length;
 
-            string orderStr = WeaponOrder?.Value ?? "";
-            if (!string.IsNullOrWhiteSpace(orderStr))
-            {
-                string[] names = orderStr.Split(',');
-                return names.Length;
-            }
-
             SpawnerManager.PopulateAllWeapons();
             return SpawnerManager.AllWeapons?.Length ?? 0;
         }
@@ -169,20 +153,6 @@ namespace GunGameMod
                 return null;
             }
 
-            string orderStr = WeaponOrder?.Value ?? "";
-            if (!string.IsNullOrWhiteSpace(orderStr))
-            {
-                string[] names = orderStr.Split(',');
-                if (index < 0 || index >= names.Length)
-                    return null;
-
-                string weaponName = names[index].Trim();
-                if (SpawnerManager.NameToWeaponDict.TryGetValue(weaponName, out var prefab))
-                    return prefab;
-
-                return null;
-            }
-
             if (SpawnerManager.AllWeapons != null && index >= 0 && index < SpawnerManager.AllWeapons.Length)
                 return SpawnerManager.AllWeapons[index];
 
@@ -192,50 +162,20 @@ namespace GunGameMod
         private void BindWeaponSlots()
         {
             WeaponSlots = new ConfigEntry<string>[DefaultWeaponNames.Length];
-            string[] migratedNames = ParseLegacyWeaponOrder();
             var acceptableWeapons = new AcceptableValueList<string>(DefaultWeaponNames);
 
             for (int i = 0; i < WeaponSlots.Length; i++)
             {
-                string defaultWeapon = i < migratedNames.Length && IsKnownWeaponName(migratedNames[i])
-                    ? migratedNames[i]
-                    : DefaultWeaponNames[i];
-
                 WeaponSlots[i] = Config.Bind(
                     "Weapon Order",
                     $"Slot {i + 1:00}",
-                    defaultWeapon,
+                    DefaultWeaponNames[i],
                     new ConfigDescription(
                         $"Weapon given at progression slot {i + 1}.",
                         acceptableWeapons
                     )
                 );
             }
-        }
-
-        private static string[] ParseLegacyWeaponOrder()
-        {
-            string orderStr = WeaponOrder?.Value ?? "";
-            if (string.IsNullOrWhiteSpace(orderStr))
-                return Array.Empty<string>();
-
-            string[] names = orderStr.Split(',');
-            for (int i = 0; i < names.Length; i++)
-                names[i] = names[i].Trim();
-
-            return names;
-        }
-
-        private static bool IsKnownWeaponName(string weaponName)
-        {
-            if (string.IsNullOrWhiteSpace(weaponName))
-                return false;
-
-            for (int i = 0; i < DefaultWeaponNames.Length; i++)
-                if (DefaultWeaponNames[i] == weaponName)
-                    return true;
-
-            return false;
         }
 
         internal static PlayerPickup FindPickupForPlayerId(int playerId)
