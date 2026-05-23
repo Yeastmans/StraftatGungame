@@ -470,6 +470,10 @@ namespace GunGameMod
                 var client = __instance.playerValues?.sync___get_value_playerClient();
                 int playerId = client?.PlayerId ?? -1;
                 int weaponIndex = playerId >= 0 ? GetCurrentWeaponIndex(playerId) : 0;
+
+                if (playerId >= 0 && (GunGameWeaponManager.IsGivingWeapon(playerId) || GunGameWeaponManager.IsDropProtected(playerId)))
+                    return false;
+
                 var runner = GameManager.Instance as MonoBehaviour ?? GunGamePlugin.Instance;
                 runner?.StartCoroutine(DeferredDropCleanup(__instance, obj, isPlaceable, playerId, weaponIndex));
             }

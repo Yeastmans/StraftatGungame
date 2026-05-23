@@ -1,4 +1,5 @@
 using BepInEx;
+using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using System;
@@ -14,13 +15,16 @@ using USceneManager = UnityEngine.SceneManagement.SceneManager;
 namespace GunGameMod
 {
     [BepInPlugin(PluginGUID, PluginName, PluginVersion)]
-    [BepInDependency("com.koki.weapons", BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency(KokiWeaponsPluginGUID, BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency(CmrPluginGUID, BepInDependency.DependencyFlags.SoftDependency)]
     public class GunGamePlugin : BaseUnityPlugin
     {
         public const string PluginGUID = "com.modder.gungame";
         public const string PluginName = "Gun Game";
         public const string PluginVersion = "1.0.0";
         public const uint ModId = 774411;
+        private const string KokiWeaponsPluginGUID = "com.koki.weapons";
+        private const string CmrPluginGUID = "straftatcmr.rebalance";
 
         internal static ManualLogSource Log;
         private static GunGamePlugin _instance;
@@ -56,10 +60,8 @@ namespace GunGameMod
             "BaseballBat", "Stylus", "Nizeh", "JahvalMahmaerd", "BigFattyBro", "CurvedKnife", "Couperet", "Katana", "Flamberge", "DF_GodSword", "Impetus"
         };
 
-        private static readonly string[][] KnownCustomWeaponNameGroups = new[]
+        private static readonly string[][] VanillaWeaponNameGroups = new[]
         {
-            new[] { "Teleport Mine", "TPTrap", "tptrap" },
-            new[] { "Repulsion Grenade", "RepulsionGrenade", "RepulsorGrenadeMerged", "KBGrenade", "repulsiongrenade" },
             new[] { "StunMine", "stunMine" },
             new[] { "StunGrenade", "stunGrenade" },
             new[] { "FlashLight", "flashLight" },
@@ -67,10 +69,22 @@ namespace GunGameMod
             new[] { "HandGrenadeTwo", "handGrenadeTwo" }
         };
 
+        private static readonly string[][] KokiWeaponNameGroups = new[]
+        {
+            new[] { "Teleport Mine", "TPTrap", "tptrap" },
+            new[] { "Repulsion Grenade", "RepulsionGrenade", "RepulsorGrenadeMerged", "KBGrenade", "repulsiongrenade" }
+        };
+
+        private static readonly string[][] CmrWeaponNameGroups = new[]
+        {
+            new[] { "Katana", "kuz-yakich" }
+        };
+
         private void Awake()
         {
             Log = Logger;
             _instance = this;
+            LogDetectedCompatibility();
 
             Enabled = Config.Bind("General", "Enabled", true, "Enable Gun Game mode.");
             KillsToWin = Config.Bind(
@@ -329,7 +343,7 @@ namespace GunGameMod
 
         private static string[] GetWeaponNameCandidates(string weaponName)
         {
-            foreach (var group in KnownCustomWeaponNameGroups)
+            foreach (var group in GetActiveWeaponNameGroups())
             {
                 foreach (string candidate in group)
                 {
@@ -339,6 +353,47 @@ namespace GunGameMod
             }
 
             return new[] { weaponName };
+        }
+
+        private static IEnumerable<string[]> GetActiveWeaponNameGroups()
+        {
+            foreach (var group in VanillaWeaponNameGroups)
+                yield return group;
+
+            if (IsKokiWeaponsLoaded())
+                foreach (var group in KokiWeaponNameGroups)
+                    yield return group;
+
+            if (IsCmrLoaded())
+                foreach (var group in CmrWeaponNameGroups)
+                    yield return group;
+        }
+
+        private static bool IsKokiWeaponsLoaded() => IsPluginLoaded(KokiWeaponsPluginGUID);
+
+        private static bool IsCmrLoaded() => IsPluginLoaded(CmrPluginGUID);
+
+        private static bool IsPluginLoaded(string pluginGuid)
+        {
+            try
+            {
+                return Chainloader.PluginInfos != null && Chainloader.PluginInfos.ContainsKey(pluginGuid);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void LogDetectedCompatibility()
+        {
+            bool kokiLoaded = IsKokiWeaponsLoaded();
+            bool cmrLoaded = IsCmrLoaded();
+
+            if (kokiLoaded || cmrLoaded)
+                Log?.LogInfo($"Gun Game compatibility active: KokiWeapons={kokiLoaded}, CMR={cmrLoaded}");
+            else
+                Log?.LogInfo("Gun Game compatibility active: vanilla weapons only.");
         }
 
         private static bool TryResolveConfiguredWeaponPrefab(string configValue, out GameObject prefab)

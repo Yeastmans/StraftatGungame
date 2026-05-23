@@ -33,6 +33,7 @@ namespace GunGameMod
         {
             _pendingWeaponIndex.Remove(playerId);
             _giveSequence.Remove(playerId);
+            _dropProtectionUntil.Remove(playerId);
         }
 
         public static void ClearAllPending()
@@ -40,6 +41,7 @@ namespace GunGameMod
             _pendingWeaponIndex.Clear();
             _giveSequence.Clear();
             _givingInProgress.Clear();
+            _dropProtectionUntil.Clear();
             _initialSpawnDelayDone = false;
         }
 
@@ -69,6 +71,7 @@ namespace GunGameMod
         private static bool _initialSpawnDelayDone = false;
         private static Dictionary<int, int> _giveSequence = new Dictionary<int, int>();
         private static HashSet<int> _givingInProgress = new HashSet<int>();
+        private static Dictionary<int, float> _dropProtectionUntil = new Dictionary<int, float>();
 
         public static bool IsGivingWeapon(int playerId) => _givingInProgress.Contains(playerId);
 
@@ -244,6 +247,7 @@ namespace GunGameMod
             if (secondPrefab != null)
                 AssignWeaponToHand(pickup, leftWeapon, leftIb, playerGO, false);
 
+            ProtectRecentGrant(playerId);
             _givingInProgress.Remove(playerId);
         }
 
@@ -292,6 +296,26 @@ namespace GunGameMod
 
             try { _miSetObjectInHandObserver?.Invoke(pickup, new object[] { weapon, weapon.transform.position, weapon.transform.rotation, playerGO, rightHand }); }
             catch { }
+
+            try { _miSetObjectInHandObserverLogic?.Invoke(pickup, new object[] { weapon, weapon.transform.position, weapon.transform.rotation, playerGO, rightHand }); }
+            catch { }
+        }
+
+        private static void ProtectRecentGrant(int playerId)
+        {
+            _dropProtectionUntil[playerId] = Time.time + 2f;
+        }
+
+        internal static bool IsDropProtected(int playerId)
+        {
+            if (!_dropProtectionUntil.TryGetValue(playerId, out float until))
+                return false;
+
+            if (Time.time <= until)
+                return true;
+
+            _dropProtectionUntil.Remove(playerId);
+            return false;
         }
 
         private static bool IsTeleportMinePrefab(GameObject prefab)
