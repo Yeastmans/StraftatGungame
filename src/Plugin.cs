@@ -2,6 +2,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using System;
+using System.Collections.Generic;
 using FishNet;
 using FishNet.Managing.Scened;
 using UnityEngine;
@@ -29,6 +30,8 @@ namespace GunGameMod
 
         public static bool MatchOver = false;
         private bool _fishNetHooked = false;
+        private const int MaxDropdownWeaponNameLength = 32;
+        private static Dictionary<string, string> WeaponConfigValueToName = new Dictionary<string, string>(StringComparer.Ordinal);
 
         private static readonly string[] DefaultWeaponNames = new[]
         {
@@ -60,11 +63,12 @@ namespace GunGameMod
                 )
             );
             RespawnDelay = Config.Bind("General", "Respawn Delay", 3f, "Seconds before a dead player respawns.");
-            BindWeaponSlots();
 
             GunGamePatches.Apply();
             USceneManager.sceneLoaded += OnSceneLoaded;
         }
+
+        private void Start() => EnsureWeaponSlotsBound();
 
         private void OnEnable() { _instance = this; }
         private void OnDisable() { if (_instance == this) _instance = null; }
@@ -130,6 +134,8 @@ namespace GunGameMod
 
         public static int GetOrderedWeaponCount()
         {
+            _instance?.EnsureWeaponSlotsBound();
+
             if (WeaponSlots != null && WeaponSlots.Length > 0)
                 return WeaponSlots.Length;
 
@@ -139,11 +145,14 @@ namespace GunGameMod
 
         public static GameObject GetOrderedWeaponPrefab(int index)
         {
+            _instance?.EnsureWeaponSlotsBound();
             SpawnerManager.PopulateAllWeapons();
 
             if (WeaponSlots != null && index >= 0 && index < WeaponSlots.Length)
             {
                 string slotWeaponName = WeaponSlots[index]?.Value?.Trim();
+                slotWeaponName = ResolveConfiguredWeaponName(slotWeaponName);
+
                 if (!string.IsNullOrWhiteSpace(slotWeaponName) &&
                     SpawnerManager.NameToWeaponDict.TryGetValue(slotWeaponName, out var slotPrefab))
                 {
@@ -159,10 +168,19 @@ namespace GunGameMod
             return null;
         }
 
+        private void EnsureWeaponSlotsBound()
+        {
+            if (WeaponSlots != null)
+                return;
+
+            BindWeaponSlots();
+        }
+
         private void BindWeaponSlots()
         {
             WeaponSlots = new ConfigEntry<string>[DefaultWeaponNames.Length];
-            var acceptableWeapons = new AcceptableValueList<string>(DefaultWeaponNames);
+            string[] availableWeaponValues = GetAvailableWeaponConfigValues();
+            var acceptableWeapons = new AcceptableValueList<string>(availableWeaponValues);
 
             for (int i = 0; i < WeaponSlots.Length; i++)
             {
@@ -176,6 +194,115 @@ namespace GunGameMod
                     )
                 );
             }
+        }
+
+        private static string[] GetAvailableWeaponConfigValues()
+        {
+            var names = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            for (int i = 0; i < DefaultWeaponNames.Length; i++)
+                AddWeaponName(DefaultWeaponNames[i], names, seen);
+
+            try
+            {
+                SpawnerManager.PopulateAllWeapons();
+
+                if (SpawnerManager.NameToWeaponDict != null)
+                {
+                    foreach (string weaponName in SpawnerManager.NameToWeaponDict.Keys)
+                        AddWeaponName(weaponName, names, seen);
+                }
+
+                if (SpawnerManager.AllWeapons != null)
+                {
+                    foreach (var weapon in SpawnerManager.AllWeapons)
+                        if (weapon != null)
+                            AddWeaponName(weapon.name, names, seen);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log?.LogWarning($"Could not discover custom weapons for config dropdowns: {ex.GetType().Name}");
+            }
+
+            return BuildWeaponConfigValues(names);
+        }
+
+        private static void AddWeaponName(string weaponName, List<string> names, HashSet<string> seen)
+        {
+            if (string.IsNullOrWhiteSpace(weaponName))
+                return;
+
+            weaponName = weaponName.Replace("(Clone)", "").Trim();
+            if (seen.Add(weaponName))
+                names.Add(weaponName);
+        }
+
+        private static string[] BuildWeaponConfigValues(List<string> weaponNames)
+        {
+            var values = new List<string>();
+            var usedValues = new HashSet<string>(StringComparer.Ordinal);
+            var valueToName = new Dictionary<string, string>(StringComparer.Ordinal);
+            var vanillaNames = new HashSet<string>(DefaultWeaponNames, StringComparer.Ordinal);
+            int customIndex = 1;
+
+            foreach (string weaponName in weaponNames)
+            {
+                string configValue = weaponName;
+
+                if (!vanillaNames.Contains(weaponName) && weaponName.Length > MaxDropdownWeaponNameLength)
+                {
+                    string prefix = $"Custom {customIndex:00}: ";
+                    int maxNameLength = Math.Max(1, MaxDropdownWeaponNameLength - prefix.Length - 3);
+                    configValue = prefix + weaponName.Substring(0, Math.Min(maxNameLength, weaponName.Length)) + "...";
+                    customIndex++;
+                }
+
+                configValue = MakeUniqueConfigValue(configValue, usedValues);
+                values.Add(configValue);
+                valueToName[configValue] = weaponName;
+
+                if (!valueToName.ContainsKey(weaponName))
+                    valueToName[weaponName] = weaponName;
+            }
+
+            WeaponConfigValueToName = valueToName;
+            return values.ToArray();
+        }
+
+        private static string MakeUniqueConfigValue(string configValue, HashSet<string> usedValues)
+        {
+            if (usedValues.Add(configValue))
+                return configValue;
+
+            int suffix = 2;
+            while (true)
+            {
+                string suffixText = $" #{suffix}";
+                int maxBaseLength = Math.Max(1, MaxDropdownWeaponNameLength - suffixText.Length);
+                string candidateBase = configValue.Length > maxBaseLength
+                    ? configValue.Substring(0, maxBaseLength)
+                    : configValue;
+                string candidate = candidateBase + suffixText;
+
+                if (usedValues.Add(candidate))
+                    return candidate;
+
+                suffix++;
+            }
+        }
+
+        private static string ResolveConfiguredWeaponName(string configValue)
+        {
+            if (string.IsNullOrWhiteSpace(configValue))
+                return configValue;
+
+            configValue = configValue.Trim();
+            if (WeaponConfigValueToName.TryGetValue(configValue, out string weaponName))
+                return weaponName;
+
+            return configValue;
         }
 
         internal static PlayerPickup FindPickupForPlayerId(int playerId)
