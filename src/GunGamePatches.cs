@@ -59,7 +59,9 @@ namespace GunGameMod
                 PatchPrefix(typeof(ItemBehaviour), "StickOnGround", nameof(ItemBehaviour_StickOnGround_Prefix));
                 PatchPrefix(typeof(Spawner), "Update", nameof(Spawner_Update_Prefix));
                 PatchPrefix(typeof(PlayerPickup), "RightHandFix", nameof(PlayerPickup_RightHandFix_Prefix));
+                PatchPrefix(typeof(PlayerPickup), "LeftHandFix", nameof(PlayerPickup_LeftHandFix_Prefix));
                 PatchPrefix(typeof(PlayerPickup), "RightHandDrop", nameof(PlayerPickup_RightHandDrop_Prefix));
+                PatchPrefix(typeof(PlayerPickup), "RightHandPickup", nameof(PlayerPickup_RightHandPickup_Prefix));
                 PatchPrefix(typeof(PlayerPickup), "SwitchWeapons", nameof(PlayerPickup_SwitchWeapons_Prefix));
                 PatchPrefix(typeof(PlayerPickup), "LeftHandPickup", nameof(PlayerPickup_LeftHandPickup_Prefix));
 
@@ -429,6 +431,33 @@ namespace GunGameMod
             return true;
         }
 
+        public static bool PlayerPickup_LeftHandFix_Prefix(PlayerPickup __instance)
+        {
+            if (!GunGamePlugin.Enabled.Value) return true;
+
+            if (__instance.sync___get_value_hasObjectInLeftHand() && __instance.sync___get_value_objInLeftHand() == null)
+            {
+                __instance.sync___set_value_hasObjectInLeftHand(false, true);
+                return false;
+            }
+
+            var obj = __instance.sync___get_value_objInLeftHand();
+            if (obj == null) return true;
+
+            if (obj.layer == 7 || obj.layer == 9)
+            {
+                var mi = GunGameWeaponManager.SetObjectInHandObserverLogic;
+                if (mi != null)
+                {
+                    try { mi.Invoke(__instance, new object[] { obj, obj.transform.position, obj.transform.rotation, __instance.gameObject, false }); }
+                    catch { }
+                }
+                return false;
+            }
+
+            return true;
+        }
+
         public static bool PlayerPickup_RightHandDrop_Prefix(PlayerPickup __instance)
         {
             if (!GunGamePlugin.Enabled.Value) return true;
@@ -448,6 +477,8 @@ namespace GunGameMod
 
             return true;
         }
+
+        public static bool PlayerPickup_RightHandPickup_Prefix() => !GunGamePlugin.Enabled.Value;
 
         public static bool PlayerPickup_SwitchWeapons_Prefix() => !GunGamePlugin.Enabled.Value;
 
