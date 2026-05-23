@@ -5,8 +5,10 @@ using System;
 using System.Collections.Generic;
 using FishNet;
 using FishNet.Managing.Scened;
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 using USceneManager = UnityEngine.SceneManagement.SceneManager;
 
 namespace GunGameMod
@@ -31,8 +33,9 @@ namespace GunGameMod
 
         public static bool MatchOver = false;
         private bool _fishNetHooked = false;
-        private const int MaxDropdownWeaponNameLength = 32;
-        private static Dictionary<string, string> WeaponConfigValueToName = new Dictionary<string, string>(StringComparer.Ordinal);
+        private const float ModMenuDropdownWidth = 520f;
+        private float _nextDropdownResizeTime = 0f;
+        private static Dictionary<string, string[]> WeaponConfigValueToNames = new Dictionary<string, string[]>(StringComparer.Ordinal);
 
         private static readonly string[] DefaultWeaponNames = new[]
         {
@@ -46,6 +49,12 @@ namespace GunGameMod
             "HandGrenade", "GlandGrenade",
             "ProximityMine", "APMine", "Claymore",
             "BaseballBat", "Stylus", "Nizeh", "JahvalMahmaerd", "BigFattyBro", "CurvedKnife", "Couperet", "Katana", "Flamberge", "DF_GodSword", "Impetus"
+        };
+
+        private static readonly string[][] KnownCustomWeaponNameGroups = new[]
+        {
+            new[] { "Teleport Mine", "TPTrap", "tptrap" },
+            new[] { "Repulsion Grenade", "RepulsionGrenade", "RepulsorGrenadeMerged", "KBGrenade", "repulsiongrenade" }
         };
 
         private void Awake()
@@ -122,6 +131,8 @@ namespace GunGameMod
                 FullReset();
             }
 
+            WidenModMenuDropdowns();
+
             if (!Enabled.Value || GameManager.Instance == null || MatchOver) return;
             if (InstanceFinder.NetworkManager == null || !InstanceFinder.NetworkManager.IsServer) return;
 
@@ -151,13 +162,8 @@ namespace GunGameMod
             if (WeaponSlots != null && index >= 0 && index < WeaponSlots.Length)
             {
                 string slotWeaponName = WeaponSlots[index]?.Value?.Trim();
-                slotWeaponName = ResolveConfiguredWeaponName(slotWeaponName);
-
-                if (!string.IsNullOrWhiteSpace(slotWeaponName) &&
-                    SpawnerManager.NameToWeaponDict.TryGetValue(slotWeaponName, out var slotPrefab))
-                {
+                if (TryResolveConfiguredWeaponPrefab(slotWeaponName, out var slotPrefab))
                     return slotPrefab;
-                }
 
                 return null;
             }
@@ -204,6 +210,10 @@ namespace GunGameMod
             for (int i = 0; i < DefaultWeaponNames.Length; i++)
                 AddWeaponName(DefaultWeaponNames[i], names, seen);
 
+            foreach (var group in KnownCustomWeaponNameGroups)
+                if (group.Length > 0)
+                    AddWeaponName(group[0], names, seen);
+
             try
             {
                 SpawnerManager.PopulateAllWeapons();
@@ -243,31 +253,23 @@ namespace GunGameMod
         {
             var values = new List<string>();
             var usedValues = new HashSet<string>(StringComparer.Ordinal);
-            var valueToName = new Dictionary<string, string>(StringComparer.Ordinal);
-            var vanillaNames = new HashSet<string>(DefaultWeaponNames, StringComparer.Ordinal);
-            int customIndex = 1;
+            var valueToNames = new Dictionary<string, string[]>(StringComparer.Ordinal);
 
             foreach (string weaponName in weaponNames)
             {
                 string configValue = weaponName;
-
-                if (!vanillaNames.Contains(weaponName) && weaponName.Length > MaxDropdownWeaponNameLength)
-                {
-                    string prefix = $"Custom {customIndex:00}: ";
-                    int maxNameLength = Math.Max(1, MaxDropdownWeaponNameLength - prefix.Length - 3);
-                    configValue = prefix + weaponName.Substring(0, Math.Min(maxNameLength, weaponName.Length)) + "...";
-                    customIndex++;
-                }
+                string[] candidates = GetWeaponNameCandidates(weaponName);
 
                 configValue = MakeUniqueConfigValue(configValue, usedValues);
                 values.Add(configValue);
-                valueToName[configValue] = weaponName;
+                valueToNames[configValue] = candidates;
 
-                if (!valueToName.ContainsKey(weaponName))
-                    valueToName[weaponName] = weaponName;
+                foreach (string candidate in candidates)
+                    if (!valueToNames.ContainsKey(candidate))
+                        valueToNames[candidate] = candidates;
             }
 
-            WeaponConfigValueToName = valueToName;
+            WeaponConfigValueToNames = valueToNames;
             return values.ToArray();
         }
 
@@ -280,11 +282,7 @@ namespace GunGameMod
             while (true)
             {
                 string suffixText = $" #{suffix}";
-                int maxBaseLength = Math.Max(1, MaxDropdownWeaponNameLength - suffixText.Length);
-                string candidateBase = configValue.Length > maxBaseLength
-                    ? configValue.Substring(0, maxBaseLength)
-                    : configValue;
-                string candidate = candidateBase + suffixText;
+                string candidate = configValue + suffixText;
 
                 if (usedValues.Add(candidate))
                     return candidate;
@@ -293,16 +291,108 @@ namespace GunGameMod
             }
         }
 
-        private static string ResolveConfiguredWeaponName(string configValue)
+        private static string[] GetWeaponNameCandidates(string weaponName)
         {
+            foreach (var group in KnownCustomWeaponNameGroups)
+            {
+                foreach (string candidate in group)
+                {
+                    if (string.Equals(candidate, weaponName, StringComparison.Ordinal))
+                        return group;
+                }
+            }
+
+            return new[] { weaponName };
+        }
+
+        private static bool TryResolveConfiguredWeaponPrefab(string configValue, out GameObject prefab)
+        {
+            prefab = null;
+
             if (string.IsNullOrWhiteSpace(configValue))
-                return configValue;
+                return false;
 
             configValue = configValue.Trim();
-            if (WeaponConfigValueToName.TryGetValue(configValue, out string weaponName))
-                return weaponName;
+            if (WeaponConfigValueToNames.TryGetValue(configValue, out string[] weaponNames))
+            {
+                foreach (string weaponName in weaponNames)
+                    if (!string.IsNullOrWhiteSpace(weaponName) && SpawnerManager.NameToWeaponDict.TryGetValue(weaponName, out prefab))
+                        return true;
+            }
 
-            return configValue;
+            if (SpawnerManager.NameToWeaponDict.TryGetValue(configValue, out prefab))
+                return true;
+
+            return false;
+        }
+
+        private void WidenModMenuDropdowns()
+        {
+            if (Time.unscaledTime < _nextDropdownResizeTime)
+                return;
+
+            _nextDropdownResizeTime = Time.unscaledTime + 0.5f;
+
+            try
+            {
+                foreach (var dropdown in FindObjectsOfType<TMP_Dropdown>(true))
+                {
+                    if (dropdown == null)
+                        continue;
+
+                    bool hasGunGameWeapon = false;
+                    foreach (var option in dropdown.options)
+                    {
+                        if (option != null && WeaponConfigValueToNames.ContainsKey(option.text))
+                        {
+                            hasGunGameWeapon = true;
+                            break;
+                        }
+                    }
+
+                    if (!hasGunGameWeapon)
+                        continue;
+
+                    WidenRect(dropdown.GetComponent<RectTransform>());
+                    WidenLayout(dropdown.GetComponent<LayoutElement>());
+                    WidenText(dropdown.captionText);
+                    WidenText(dropdown.itemText);
+
+                    if (dropdown.template != null)
+                    {
+                        WidenRect(dropdown.template);
+                        WidenLayout(dropdown.template.GetComponent<LayoutElement>());
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private static void WidenRect(RectTransform rect)
+        {
+            if (rect == null || rect.rect.width >= ModMenuDropdownWidth)
+                return;
+
+            rect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, ModMenuDropdownWidth);
+        }
+
+        private static void WidenLayout(LayoutElement layout)
+        {
+            if (layout == null)
+                return;
+
+            layout.minWidth = Mathf.Max(layout.minWidth, ModMenuDropdownWidth);
+            layout.preferredWidth = Mathf.Max(layout.preferredWidth, ModMenuDropdownWidth);
+            layout.flexibleWidth = Mathf.Max(layout.flexibleWidth, 1f);
+        }
+
+        private static void WidenText(TMP_Text text)
+        {
+            if (text == null)
+                return;
+
+            text.enableWordWrapping = false;
+            text.overflowMode = TextOverflowModes.Ellipsis;
         }
 
         internal static PlayerPickup FindPickupForPlayerId(int playerId)
