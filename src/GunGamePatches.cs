@@ -20,6 +20,8 @@ namespace GunGameMod
         private static Dictionary<int, GameObject> _playerRagdolls = new Dictionary<int, GameObject>();
         private static bool _winSequenceInProgress = false;
         private static HashSet<int> _respawnInProgress = new HashSet<int>();
+        private const int MaxRespawnAttempts = 3;
+        private const float RespawnSettleSeconds = 0.6f;
 
         private static MethodInfo _miCmdRespawn;
         private static MethodInfo _miRoundWon;
@@ -198,9 +200,10 @@ namespace GunGameMod
                 catch
                 {
                     try { if (spawnedObj != null) spawnedObj.SetActive(true); } catch { }
+                    return true;
                 }
             }
-            catch { }
+            catch { return true; }
             return false;
         }
 
@@ -292,16 +295,21 @@ namespace GunGameMod
 
             if (InstanceFinder.NetworkManager != null && InstanceFinder.NetworkManager.IsServer)
             {
-                if (_killsPerPlayer.ContainsKey(playerId))
-                    _killsPerPlayer.Remove(playerId);
-                GunGameWeaponManager.ClearPendingForPlayer(playerId);
+                bool isRespawn = _respawnInProgress.Contains(playerId) || GunGameWeaponManager.HasPendingWeapon(playerId);
+
+                if (!isRespawn)
+                {
+                    if (_killsPerPlayer.ContainsKey(playerId))
+                        _killsPerPlayer.Remove(playerId);
+                    GunGameWeaponManager.ClearPendingForPlayer(playerId);
+                }
 
                 if (GameManager.Instance?.alivePlayers != null && !GameManager.Instance.alivePlayers.Contains(playerId))
                     GameManager.Instance.alivePlayers.Add(playerId);
 
                 _waitingForSetStartTime.Add(playerId);
 
-                if (GunGamePlugin.GetOrderedWeaponCount() > 0)
+                if (!isRespawn && GunGamePlugin.GetOrderedWeaponCount() > 0)
                 {
                     GunGameWeaponManager.GiveWeaponToPlayer(playerId, 0);
                     GameManager.Instance?.StartCoroutine(DelayedInitialSpawnFallback(playerId));
@@ -683,7 +691,7 @@ namespace GunGameMod
 
         private static IEnumerator SinglePlayerRespawnCoroutine(int deadPlayerId)
         {
-            yield return new WaitForSeconds(GunGamePlugin.RespawnDelay.Value);
+            yield return new WaitForSeconds(GunGamePlugin.RespawnDelay.Value + 3f);
 
             if (GunGamePlugin.MatchOver) yield break;
             if (GameManager.Instance == null || InstanceFinder.NetworkManager == null || !InstanceFinder.NetworkManager.IsServer)
@@ -693,43 +701,189 @@ namespace GunGameMod
             while (_respawnInProgress.Contains(deadPlayerId) && Time.time < gateTimeout)
                 yield return null;
 
+            if (_respawnInProgress.Contains(deadPlayerId))
+                yield break;
+
             _respawnInProgress.Add(deadPlayerId);
-            try
-            {
-                if (_playerRagdolls.TryGetValue(deadPlayerId, out var ragdoll) && ragdoll != null)
-                {
-                    try { UnityEngine.Object.Destroy(ragdoll); } catch { }
-                    _playerRagdolls.Remove(deadPlayerId);
-                }
-
-                CleanupBloodAndHats();
-            }
-            catch { }
-
             bool spawned = false;
             try
             {
-                if (_miCmdRespawn != null)
+                for (int attempt = 1; attempt <= MaxRespawnAttempts && !GunGamePlugin.MatchOver; attempt++)
                 {
-                    var pm = FindPlayerManagerForId(deadPlayerId);
-                    if (pm != null)
+                    PlayerManager pm = FindPlayerManagerForId(deadPlayerId);
+                    if (pm == null)
                     {
-                        _waitingForSetStartTime.Add(deadPlayerId);
-                        var args = BuildDefaultArgs(_miCmdRespawn);
-                        _miCmdRespawn.Invoke(pm, args);
-                        spawned = true;
-                        if (GameManager.Instance != null) GameManager.Instance.SetStartTime(0f);
-                        GameManager.Instance.StartCoroutine(KeepPlayerMovable(pm, 4f));
+                        LogRespawn(deadPlayerId, attempt, "missing PlayerManager");
+                        yield return new WaitForSeconds(RespawnSettleSeconds);
+                        continue;
                     }
+
+                    CleanupRespawnArtifacts(deadPlayerId);
+
+                    if (attempt > 1)
+                        CleanupSpawnedObjectForPlayer(pm, deadPlayerId);
+
+                    if (!TryInvokeRespawn(pm, deadPlayerId, attempt))
+                    {
+                        yield return new WaitForSeconds(RespawnSettleSeconds);
+                        continue;
+                    }
+
+                    yield return new WaitForSeconds(RespawnSettleSeconds);
+
+                    pm = FindPlayerManagerForId(deadPlayerId);
+                    string failureReason;
+                    if (IsPlayerRespawnValid(deadPlayerId, pm, out failureReason))
+                    {
+                        spawned = true;
+                        LogRespawn(deadPlayerId, attempt, "respawn verified");
+                        if (GameManager.Instance != null) GameManager.Instance.SetStartTime(0f);
+                        GameManager.Instance?.StartCoroutine(KeepPlayerMovable(pm, 4f));
+                        break;
+                    }
+
+                    LogRespawn(deadPlayerId, attempt, "verify failed: " + failureReason);
                 }
             }
-            catch { }
-
-            yield return null;
-            _respawnInProgress.Remove(deadPlayerId);
+            finally
+            {
+                _respawnInProgress.Remove(deadPlayerId);
+            }
 
             if (spawned)
                 GameManager.Instance?.StartCoroutine(DelayedRespawnWeaponFallback(deadPlayerId));
+            else
+                LogRespawn(deadPlayerId, MaxRespawnAttempts, "respawn failed after all attempts");
+        }
+
+        private static bool TryInvokeRespawn(PlayerManager pm, int playerId, int attempt)
+        {
+            if (_miCmdRespawn == null || pm == null)
+                return false;
+
+            try
+            {
+                _waitingForSetStartTime.Add(playerId);
+                _miCmdRespawn.Invoke(pm, BuildDefaultArgs(_miCmdRespawn));
+                if (GameManager.Instance != null) GameManager.Instance.SetStartTime(0f);
+                GameManager.Instance?.StartCoroutine(KeepPlayerMovable(pm, 4f));
+                LogRespawn(playerId, attempt, "respawn invoked");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogRespawn(playerId, attempt, "respawn invoke failed: " + ex.GetType().Name);
+                return false;
+            }
+        }
+
+        private static bool IsPlayerRespawnValid(int playerId, PlayerManager pm, out string reason)
+        {
+            reason = "";
+
+            if (pm == null)
+            {
+                reason = "missing PlayerManager";
+                return false;
+            }
+
+            if (pm.player == null)
+            {
+                reason = "missing player controller";
+                return false;
+            }
+
+            GameObject playerObj = pm.player.gameObject;
+            if (playerObj == null || !playerObj.activeInHierarchy)
+            {
+                reason = "inactive player object";
+                return false;
+            }
+
+            var values = playerObj.GetComponent<PlayerValues>();
+            int spawnedPlayerId = values?.sync___get_value_playerClient()?.PlayerId ?? -1;
+            if (spawnedPlayerId != playerId)
+            {
+                reason = "player id mismatch";
+                return false;
+            }
+
+            var health = playerObj.GetComponent<PlayerHealth>();
+            if (health == null)
+            {
+                reason = "missing PlayerHealth";
+                return false;
+            }
+
+            if (health.sync___get_value_health() <= 0f || health.sync___get_value_isKilled())
+            {
+                reason = "still dead";
+                return false;
+            }
+
+            var pickup = playerObj.GetComponentInChildren<PlayerPickup>(true);
+            if (pickup == null)
+            {
+                reason = "missing PlayerPickup";
+                return false;
+            }
+
+            try
+            {
+                pm.SetPlayerMove(true);
+                pm.player.sync___set_value_canMove(true, true);
+                pm.player.startOfRound = false;
+                if (PauseManager.Instance != null) PauseManager.Instance.startRound = false;
+            }
+            catch
+            {
+                reason = "could not force movement";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void CleanupRespawnArtifacts(int playerId)
+        {
+            try
+            {
+                if (_playerRagdolls.TryGetValue(playerId, out var ragdoll) && ragdoll != null)
+                    UnityEngine.Object.Destroy(ragdoll);
+                _playerRagdolls.Remove(playerId);
+                CleanupBloodAndHats();
+            }
+            catch { }
+        }
+
+        private static void CleanupSpawnedObjectForPlayer(PlayerManager pm, int playerId)
+        {
+            try
+            {
+                GameObject spawnedObj = _fiSpawnedObject?.GetValue(pm) as GameObject;
+                if (spawnedObj == null)
+                    return;
+
+                var values = spawnedObj.GetComponent<PlayerValues>() ?? spawnedObj.GetComponentInChildren<PlayerValues>(true);
+                int spawnedPlayerId = values?.sync___get_value_playerClient()?.PlayerId ?? playerId;
+                if (spawnedPlayerId != playerId)
+                    return;
+
+                try { _miUnsubscribeFromInput?.Invoke(pm, null); } catch { }
+
+                var netObj = spawnedObj.GetComponent<NetworkObject>();
+                if (InstanceFinder.NetworkManager != null && InstanceFinder.NetworkManager.IsServer && netObj != null && netObj.IsSpawned)
+                    InstanceFinder.ServerManager.Despawn(netObj);
+                else
+                    UnityEngine.Object.Destroy(spawnedObj);
+            }
+            catch { }
+        }
+
+        private static void LogRespawn(int playerId, int attempt, string message)
+        {
+            try { GunGamePlugin.Log?.LogInfo($"[GunGame Respawn] player={playerId} attempt={attempt}: {message}"); }
+            catch { }
         }
 
         private static IEnumerator KeepPlayerMovable(PlayerManager pm, float duration)
