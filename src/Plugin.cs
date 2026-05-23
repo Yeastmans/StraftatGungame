@@ -220,8 +220,8 @@ namespace GunGameMod
             for (int i = 0; i < WeaponSlots.Length; i++)
             {
                 WeaponSlots[i] = Config.Bind(
-                    "Weapon Order",
-                    $"Slot {i + 1:00}",
+                    "Weapon Progression",
+                    $"Weapon {i + 1}",
                     DefaultWeaponNames[i % DefaultWeaponNames.Length],
                     new ConfigDescription(
                         $"Weapon given at progression slot {i + 1}.",
@@ -230,8 +230,8 @@ namespace GunGameMod
                 );
 
                 SecondWeaponSlots[i] = Config.Bind(
-                    "Second Weapon Order",
-                    $"Slot {i + 1:00}",
+                    "Weapon Progression",
+                    $"Weapon {i + 1} Off Hand",
                     NoSecondWeapon,
                     new ConfigDescription(
                         $"Optional left-hand weapon given at progression slot {i + 1}.",

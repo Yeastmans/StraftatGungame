@@ -209,8 +209,7 @@ namespace GunGameMod
             if (playerGO == null) playerGO = pickup.transform.root.gameObject;
 
             GameObject prefab = GunGamePlugin.GetOrderedWeaponPrefab(weaponIndex);
-            bool isTeleportMine = IsTeleportMinePrefab(prefab);
-            GameObject secondPrefab = isTeleportMine ? null : GunGamePlugin.GetSecondWeaponPrefab(weaponIndex);
+            GameObject secondPrefab = GunGamePlugin.GetSecondWeaponPrefab(weaponIndex);
 
             GameObject rightWeapon = null;
             GameObject leftWeapon = null;
