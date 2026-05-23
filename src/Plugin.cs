@@ -211,10 +211,6 @@ namespace GunGameMod
             for (int i = 0; i < DefaultWeaponNames.Length; i++)
                 AddWeaponName(DefaultWeaponNames[i], names, seen);
 
-            foreach (var group in KnownCustomWeaponNameGroups)
-                if (group.Length > 0)
-                    AddWeaponName(group[0], names, seen);
-
             try
             {
                 foreach (var weapon in LoadResourceWeapons())
