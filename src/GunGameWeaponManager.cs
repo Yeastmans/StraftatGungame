@@ -192,6 +192,7 @@ namespace GunGameMod
 
             GameObject prefab = GunGamePlugin.GetOrderedWeaponPrefab(weaponIndex);
             bool giveBothHands = IsTeleportMinePrefab(prefab);
+            GameObject secondPrefab = giveBothHands ? null : GunGamePlugin.GetSecondWeaponPrefab(weaponIndex);
 
             GameObject rightWeapon = null;
             GameObject leftWeapon = null;
@@ -202,6 +203,8 @@ namespace GunGameMod
                 rightWeapon = SpawnWeaponPrefab(nm, prefab, playerGO, out rightIb);
                 if (giveBothHands)
                     leftWeapon = SpawnWeaponPrefab(nm, prefab, playerGO, out leftIb);
+                else if (secondPrefab != null)
+                    leftWeapon = SpawnWeaponPrefab(nm, secondPrefab, playerGO, out leftIb);
             }
             catch (Exception)
             {
@@ -212,7 +215,7 @@ namespace GunGameMod
             }
 
             yield return new WaitForSeconds(0.1f);
-            if (rightWeapon == null || (giveBothHands && leftWeapon == null) || pickup == null)
+            if (rightWeapon == null || ((giveBothHands || secondPrefab != null) && leftWeapon == null) || pickup == null)
             {
                 DespawnOrDestroy(rightWeapon);
                 DespawnOrDestroy(leftWeapon);
@@ -223,7 +226,7 @@ namespace GunGameMod
             CacheMethods();
 
             AssignWeaponToHand(pickup, rightWeapon, rightIb, playerGO, true);
-            if (giveBothHands)
+            if (giveBothHands || secondPrefab != null)
                 AssignWeaponToHand(pickup, leftWeapon, leftIb, playerGO, false);
 
             _givingInProgress.Remove(playerId);

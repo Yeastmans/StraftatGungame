@@ -30,10 +30,13 @@ namespace GunGameMod
         public static ConfigEntry<int> KillsToWin;
         public static ConfigEntry<float> RespawnDelay;
         public static ConfigEntry<string>[] WeaponSlots;
+        public static ConfigEntry<string>[] SecondWeaponSlots;
 
         public static bool MatchOver = false;
         private bool _fishNetHooked = false;
-        private const float ModMenuDropdownWidth = 390f;
+        private const int WeaponSlotCount = 100;
+        private const string NoSecondWeapon = "None";
+        private const float ModMenuDropdownWidth = 332f;
         private float _nextDropdownResizeTime = 0f;
         private static Dictionary<string, string[]> WeaponConfigValueToNames = new Dictionary<string, string[]>(StringComparer.Ordinal);
         private static Dictionary<string, GameObject> ResourceWeaponPrefabs = new Dictionary<string, GameObject>(StringComparer.Ordinal);
@@ -49,13 +52,19 @@ namespace GunGameMod
             "BlankState", "Bublee", "DF_Blister", "DF_Cyst",
             "HandGrenade", "GlandGrenade",
             "ProximityMine", "APMine", "Claymore",
+            "StunMine", "StunGrenade", "FlashLight", "HandGrenadeTwo", "RepulsiveGun",
             "BaseballBat", "Stylus", "Nizeh", "JahvalMahmaerd", "BigFattyBro", "CurvedKnife", "Couperet", "Katana", "Flamberge", "DF_GodSword", "Impetus"
         };
 
         private static readonly string[][] KnownCustomWeaponNameGroups = new[]
         {
             new[] { "Teleport Mine", "TPTrap", "tptrap" },
-            new[] { "Repulsion Grenade", "RepulsionGrenade", "RepulsorGrenadeMerged", "KBGrenade", "repulsiongrenade" }
+            new[] { "Repulsion Grenade", "RepulsionGrenade", "RepulsorGrenadeMerged", "KBGrenade", "repulsiongrenade" },
+            new[] { "StunMine", "stunMine" },
+            new[] { "StunGrenade", "stunGrenade" },
+            new[] { "FlashLight", "flashLight" },
+            new[] { "RepulsiveGun", "repulsiveGun" },
+            new[] { "HandGrenadeTwo", "handGrenadeTwo" }
         };
 
         private void Awake()
@@ -70,7 +79,7 @@ namespace GunGameMod
                 DefaultWeaponNames.Length,
                 new ConfigDescription(
                     "Kills before round ends.",
-                    new AcceptableValueRange<int>(1, DefaultWeaponNames.Length)
+                    new AcceptableValueRange<int>(1, WeaponSlotCount)
                 )
             );
             RespawnDelay = Config.Bind("General", "Respawn Delay", 3f, "Seconds before a dead player respawns.");
@@ -175,9 +184,26 @@ namespace GunGameMod
             return null;
         }
 
+        public static GameObject GetSecondWeaponPrefab(int index)
+        {
+            _instance?.EnsureWeaponSlotsBound();
+
+            if (SecondWeaponSlots == null || index < 0 || index >= SecondWeaponSlots.Length)
+                return null;
+
+            string slotWeaponName = SecondWeaponSlots[index]?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(slotWeaponName) || string.Equals(slotWeaponName, NoSecondWeapon, StringComparison.Ordinal))
+                return null;
+
+            if (TryResolveConfiguredWeaponPrefab(slotWeaponName, out var slotPrefab))
+                return slotPrefab;
+
+            return null;
+        }
+
         private void EnsureWeaponSlotsBound()
         {
-            if (WeaponSlots != null)
+            if (WeaponSlots != null && SecondWeaponSlots != null)
                 return;
 
             BindWeaponSlots();
@@ -185,22 +211,46 @@ namespace GunGameMod
 
         private void BindWeaponSlots()
         {
-            WeaponSlots = new ConfigEntry<string>[DefaultWeaponNames.Length];
+            WeaponSlots = new ConfigEntry<string>[WeaponSlotCount];
+            SecondWeaponSlots = new ConfigEntry<string>[WeaponSlotCount];
             string[] availableWeaponValues = GetAvailableWeaponConfigValues();
             var acceptableWeapons = new AcceptableValueList<string>(availableWeaponValues);
+            var acceptableSecondWeapons = new AcceptableValueList<string>(BuildSecondWeaponConfigValues(availableWeaponValues));
 
             for (int i = 0; i < WeaponSlots.Length; i++)
             {
                 WeaponSlots[i] = Config.Bind(
                     "Weapon Order",
                     $"Slot {i + 1:00}",
-                    DefaultWeaponNames[i],
+                    DefaultWeaponNames[i % DefaultWeaponNames.Length],
                     new ConfigDescription(
                         $"Weapon given at progression slot {i + 1}.",
                         acceptableWeapons
                     )
                 );
+
+                SecondWeaponSlots[i] = Config.Bind(
+                    "Second Weapon Order",
+                    $"Slot {i + 1:00}",
+                    NoSecondWeapon,
+                    new ConfigDescription(
+                        $"Optional left-hand weapon given at progression slot {i + 1}.",
+                        acceptableSecondWeapons
+                    )
+                );
             }
+        }
+
+        private static string[] BuildSecondWeaponConfigValues(string[] weaponValues)
+        {
+            var values = new List<string> { NoSecondWeapon };
+            var seen = new HashSet<string>(StringComparer.Ordinal) { NoSecondWeapon };
+
+            foreach (string weaponValue in weaponValues)
+                if (!string.IsNullOrWhiteSpace(weaponValue) && seen.Add(weaponValue))
+                    values.Add(weaponValue);
+
+            return values.ToArray();
         }
 
         private static string[] GetAvailableWeaponConfigValues()
