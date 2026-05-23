@@ -36,6 +36,7 @@ namespace GunGameMod
         private const float ModMenuDropdownWidth = 390f;
         private float _nextDropdownResizeTime = 0f;
         private static Dictionary<string, string[]> WeaponConfigValueToNames = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        private static Dictionary<string, GameObject> ResourceWeaponPrefabs = new Dictionary<string, GameObject>(StringComparer.Ordinal);
 
         private static readonly string[] DefaultWeaponNames = new[]
         {
@@ -150,14 +151,13 @@ namespace GunGameMod
             if (WeaponSlots != null && WeaponSlots.Length > 0)
                 return WeaponSlots.Length;
 
-            SpawnerManager.PopulateAllWeapons();
-            return SpawnerManager.AllWeapons?.Length ?? 0;
+            RefreshResourceWeapons();
+            return ResourceWeaponPrefabs.Count;
         }
 
         public static GameObject GetOrderedWeaponPrefab(int index)
         {
             _instance?.EnsureWeaponSlotsBound();
-            SpawnerManager.PopulateAllWeapons();
 
             if (WeaponSlots != null && index >= 0 && index < WeaponSlots.Length)
             {
@@ -168,8 +168,9 @@ namespace GunGameMod
                 return null;
             }
 
-            if (SpawnerManager.AllWeapons != null && index >= 0 && index < SpawnerManager.AllWeapons.Length)
-                return SpawnerManager.AllWeapons[index];
+            GameObject[] weapons = LoadResourceWeapons();
+            if (weapons != null && index >= 0 && index < weapons.Length)
+                return weapons[index];
 
             return null;
         }
@@ -216,24 +217,13 @@ namespace GunGameMod
 
             try
             {
-                SpawnerManager.PopulateAllWeapons();
-
-                if (SpawnerManager.NameToWeaponDict != null)
-                {
-                    foreach (string weaponName in SpawnerManager.NameToWeaponDict.Keys)
-                        AddWeaponName(weaponName, names, seen);
-                }
-
-                if (SpawnerManager.AllWeapons != null)
-                {
-                    foreach (var weapon in SpawnerManager.AllWeapons)
-                        if (weapon != null)
-                            AddWeaponName(weapon.name, names, seen);
-                }
+                foreach (var weapon in LoadResourceWeapons())
+                    if (weapon != null)
+                        AddWeaponName(weapon.name, names, seen);
             }
             catch (Exception ex)
             {
-                Log?.LogWarning($"Could not discover custom weapons for config dropdowns: {ex.GetType().Name}");
+                Log?.LogWarning($"Could not discover resource weapons for config dropdowns: {ex.GetType().Name}");
             }
 
             return BuildWeaponConfigValues(names);
@@ -316,14 +306,51 @@ namespace GunGameMod
             if (WeaponConfigValueToNames.TryGetValue(configValue, out string[] weaponNames))
             {
                 foreach (string weaponName in weaponNames)
-                    if (!string.IsNullOrWhiteSpace(weaponName) && SpawnerManager.NameToWeaponDict.TryGetValue(weaponName, out prefab))
+                    if (!string.IsNullOrWhiteSpace(weaponName) && TryGetResourceWeaponPrefab(weaponName, out prefab))
                         return true;
             }
 
-            if (SpawnerManager.NameToWeaponDict.TryGetValue(configValue, out prefab))
+            if (TryGetResourceWeaponPrefab(configValue, out prefab))
                 return true;
 
             return false;
+        }
+
+        private static GameObject[] LoadResourceWeapons()
+        {
+            return Resources.LoadAll<GameObject>("RandomWeapons") ?? new GameObject[0];
+        }
+
+        private static void RefreshResourceWeapons()
+        {
+            var prefabs = new Dictionary<string, GameObject>(StringComparer.Ordinal);
+
+            foreach (var weapon in LoadResourceWeapons())
+            {
+                if (weapon == null)
+                    continue;
+
+                string weaponName = weapon.name.Replace("(Clone)", "").Trim();
+                if (!string.IsNullOrWhiteSpace(weaponName) && !prefabs.ContainsKey(weaponName))
+                    prefabs.Add(weaponName, weapon);
+            }
+
+            ResourceWeaponPrefabs = prefabs;
+        }
+
+        private static bool TryGetResourceWeaponPrefab(string weaponName, out GameObject prefab)
+        {
+            prefab = null;
+
+            if (string.IsNullOrWhiteSpace(weaponName))
+                return false;
+
+            weaponName = weaponName.Replace("(Clone)", "").Trim();
+            if (ResourceWeaponPrefabs.TryGetValue(weaponName, out prefab))
+                return true;
+
+            RefreshResourceWeapons();
+            return ResourceWeaponPrefabs.TryGetValue(weaponName, out prefab);
         }
 
         private void WidenModMenuDropdowns()
