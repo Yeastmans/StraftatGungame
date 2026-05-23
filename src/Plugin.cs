@@ -33,7 +33,7 @@ namespace GunGameMod
 
         public static bool MatchOver = false;
         private bool _fishNetHooked = false;
-        private const float ModMenuDropdownWidth = 520f;
+        private const float ModMenuDropdownWidth = 390f;
         private float _nextDropdownResizeTime = 0f;
         private static Dictionary<string, string[]> WeaponConfigValueToNames = new Dictionary<string, string[]>(StringComparer.Ordinal);
 
