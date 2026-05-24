@@ -31,6 +31,8 @@ namespace GunGameMod
         private static MethodInfo _miReturnSpawnPoint;
         private static MethodInfo _miRpcLogic_DropObjectServer;
         private static MethodInfo _miMatchLogsSendToAll;
+        private static FieldInfo _fiRightIdlePosition;
+        private static FieldInfo _fiRigBuilder;
 
         public static void Apply()
         {
@@ -60,6 +62,7 @@ namespace GunGameMod
                 PatchPrefix(typeof(Spawner), "Update", nameof(Spawner_Update_Prefix));
                 PatchPrefix(typeof(PlayerPickup), "RightHandFix", nameof(PlayerPickup_RightHandFix_Prefix));
                 PatchPrefix(typeof(PlayerPickup), "LeftHandFix", nameof(PlayerPickup_LeftHandFix_Prefix));
+                PatchPrefix(typeof(PlayerPickup), "HandsReconstruct", nameof(PlayerPickup_HandsReconstruct_Prefix));
                 PatchPrefix(typeof(PlayerPickup), "RightHandDrop", nameof(PlayerPickup_RightHandDrop_Prefix));
                 PatchPrefix(typeof(PlayerPickup), "RightHandPickup", nameof(PlayerPickup_RightHandPickup_Prefix));
                 PatchPrefix(typeof(PlayerPickup), "SwitchWeapons", nameof(PlayerPickup_SwitchWeapons_Prefix));
@@ -104,6 +107,9 @@ namespace GunGameMod
 
             _miMatchLogsSendToAll = typeof(MatchLogs).GetMethod("RpcSendChatLineToAllObservers",
                 BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
+            _fiRightIdlePosition = typeof(PlayerPickup).GetField("RightIdlePosition", BindingFlags.Instance | BindingFlags.NonPublic);
+            _fiRigBuilder = typeof(PlayerPickup).GetField("RigBuilder", BindingFlags.Instance | BindingFlags.NonPublic);
         }
 
         private static void PatchPrefix(Type type, string methodName, string patchName, Type[] paramTypes = null)
@@ -478,6 +484,33 @@ namespace GunGameMod
             return true;
         }
 
+        public static bool PlayerPickup_HandsReconstruct_Prefix(PlayerPickup __instance)
+        {
+            if (!GunGamePlugin.Enabled.Value || __instance == null) return true;
+
+            try
+            {
+                var left = __instance.sync___get_value_objInLeftHand();
+                var right = __instance.sync___get_value_objInHand();
+                if (left == null || right != null)
+                    return true;
+
+                var rightIdle = _fiRightIdlePosition?.GetValue(__instance) as Transform;
+                var leftIb = left.GetComponent<ItemBehaviour>();
+
+                __instance.SetRightIKTarget(rightIdle);
+                __instance.SetLeftIKTarget(leftIb != null ? leftIb.gripLeft : null);
+
+                var rigBuilder = _fiRigBuilder?.GetValue(__instance);
+                rigBuilder?.GetType().GetMethod("Build", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.Invoke(rigBuilder, null);
+                return false;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
         public static bool PlayerPickup_RightHandPickup_Prefix() => !GunGamePlugin.Enabled.Value;
 
         public static bool PlayerPickup_SwitchWeapons_Prefix() => !GunGamePlugin.Enabled.Value;
@@ -490,8 +523,7 @@ namespace GunGameMod
             if (!InstanceFinder.NetworkManager.IsServer) return true;
 
             string droppedName = obj != null ? obj.name.Replace("(Clone)", "").Trim() : "";
-            bool isPlaceable = droppedName == "Claymore" || droppedName == "ProximityMine" ||
-                               droppedName == "APMine" || droppedName == "HandGrenade" || droppedName == "GlandGrenade";
+            bool isPlaceable = IsPlaceableDrop(droppedName);
 
             if (isPlaceable && obj != null)
                 obj.transform.SetParent(null);
@@ -512,6 +544,16 @@ namespace GunGameMod
             catch { }
 
             return false;
+        }
+
+        private static bool IsPlaceableDrop(string droppedName)
+        {
+            return droppedName == "Claymore" || droppedName == "ProximityMine" ||
+                   droppedName == "APMine" || droppedName == "HandGrenade" || droppedName == "GlandGrenade" ||
+                   droppedName == "Teleport Mine" || droppedName == "TPTrap" || droppedName == "tptrap" ||
+                   droppedName == "Repulsion Grenade" || droppedName == "RepulsionGrenade" ||
+                   droppedName == "RepulsorGrenadeMerged" || droppedName == "KBGrenade" ||
+                   droppedName == "repulsiongrenade";
         }
 
         private static bool IsProtectedHeldDrop(PlayerPickup pickup, GameObject obj, bool rightHand)

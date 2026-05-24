@@ -283,7 +283,7 @@ namespace GunGameMod
                 }
                 if (pickup == null) yield break;
 
-                while (HasUnplacedTeleportMine(pickup))
+                while (HasUnplacedTeleportMineInHand(pickup, rightHand))
                 {
                     if (GunGamePlugin.MatchOver) yield break;
                     yield return new WaitForSeconds(0.25f);
@@ -434,6 +434,16 @@ namespace GunGameMod
 
             return HasUnplacedTeleportMine(pickup.sync___get_value_objInHand()) ||
                    HasUnplacedTeleportMine(pickup.sync___get_value_hasObjectInLeftHand() ? pickup.sync___get_value_objInLeftHand() : null);
+        }
+
+        private static bool HasUnplacedTeleportMineInHand(PlayerPickup pickup, bool rightHand)
+        {
+            if (pickup == null)
+                return false;
+
+            return HasUnplacedTeleportMine(rightHand
+                ? pickup.sync___get_value_objInHand()
+                : (pickup.sync___get_value_hasObjectInLeftHand() ? pickup.sync___get_value_objInLeftHand() : null));
         }
 
         private static bool HasUnplacedTeleportMine(GameObject weapon)
