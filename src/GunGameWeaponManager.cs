@@ -91,6 +91,16 @@ namespace GunGameMod
                 runner.StartCoroutine(GiveWeaponCoroutine(playerId, weaponIndex, seq));
         }
 
+        public static void ReplaceWeaponInHand(int playerId, int weaponIndex, bool rightHand)
+        {
+            if (InstanceFinder.NetworkManager == null || !InstanceFinder.NetworkManager.IsServer) return;
+            if (GunGamePlugin.MatchOver) return;
+
+            var runner = GameManager.Instance as MonoBehaviour ?? GunGamePlugin.Instance;
+            if (runner != null)
+                runner.StartCoroutine(ReplaceWeaponInHandCoroutine(playerId, weaponIndex, rightHand));
+        }
+
         private static IEnumerator GiveWeaponCoroutine(int playerId, int weaponIndex, int seq)
         {
             var nm = InstanceFinder.NetworkManager;
@@ -249,6 +259,94 @@ namespace GunGameMod
 
             ProtectRecentGrant(playerId);
             _givingInProgress.Remove(playerId);
+        }
+
+        private static IEnumerator ReplaceWeaponInHandCoroutine(int playerId, int weaponIndex, bool rightHand)
+        {
+            var nm = InstanceFinder.NetworkManager;
+            if (nm == null || !nm.IsServer) yield break;
+
+            GameObject prefab = rightHand
+                ? GunGamePlugin.GetOrderedWeaponPrefab(weaponIndex)
+                : GunGamePlugin.GetSecondWeaponPrefab(weaponIndex);
+            if (prefab == null) yield break;
+
+            _givingInProgress.Add(playerId);
+            try
+            {
+                PlayerPickup pickup = null;
+                for (int attempt = 0; attempt < 8; attempt++)
+                {
+                    pickup = GunGamePlugin.FindPickupForPlayerId(playerId);
+                    if (pickup != null) break;
+                    yield return new WaitForSeconds(0.5f);
+                }
+                if (pickup == null) yield break;
+
+                while (HasUnplacedTeleportMine(pickup))
+                {
+                    if (GunGamePlugin.MatchOver) yield break;
+                    yield return new WaitForSeconds(0.25f);
+                    pickup = GunGamePlugin.FindPickupForPlayerId(playerId);
+                    if (pickup == null) yield break;
+                }
+
+                GameObject held = rightHand
+                    ? pickup.sync___get_value_objInHand()
+                    : (pickup.sync___get_value_hasObjectInLeftHand() ? pickup.sync___get_value_objInLeftHand() : null);
+
+                if (rightHand)
+                {
+                    pickup.sync___set_value_hasObjectInHand(false, true);
+                    pickup.sync___set_value_objInHand(null, true);
+                }
+                else
+                {
+                    pickup.sync___set_value_hasObjectInLeftHand(false, true);
+                    pickup.sync___set_value_objInLeftHand(null, true);
+                }
+
+                DespawnOrDestroy(held);
+                yield return new WaitForSeconds(0.1f);
+
+                pickup = GunGamePlugin.FindPickupForPlayerId(playerId);
+                if (pickup == null) yield break;
+
+                GameObject playerGO = null;
+                try
+                {
+                    if (ClientInstance.playerInstances.TryGetValue(playerId, out var ci))
+                    {
+                        var pm = ci?.GetComponent<PlayerManager>();
+                        playerGO = pm?.player?.gameObject;
+                    }
+                }
+                catch { }
+                if (playerGO == null) playerGO = pickup.transform.root.gameObject;
+
+                GameObject weapon = null;
+                ItemBehaviour ib = null;
+                try
+                {
+                    weapon = SpawnWeaponPrefab(nm, prefab, playerGO, out ib);
+                }
+                catch
+                {
+                    DespawnOrDestroy(weapon);
+                    yield break;
+                }
+
+                yield return new WaitForSeconds(0.1f);
+                if (weapon == null) yield break;
+
+                CacheMethods();
+                AssignWeaponToHand(pickup, weapon, ib, playerGO, rightHand);
+                ProtectRecentGrant(playerId);
+            }
+            finally
+            {
+                _givingInProgress.Remove(playerId);
+            }
         }
 
         private static GameObject SpawnWeaponPrefab(FishNet.Managing.NetworkManager nm, GameObject prefab, GameObject playerGO, out ItemBehaviour ib)

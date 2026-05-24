@@ -16,7 +16,7 @@ namespace GunGameMod
 
         private static Dictionary<int, int> _killsPerPlayer = new Dictionary<int, int>();
         private static HashSet<int> _waitingForSetStartTime = new HashSet<int>();
-        private static HashSet<int> _pendingPlaceableReplace = new HashSet<int>();
+        private static HashSet<string> _pendingPlaceableReplace = new HashSet<string>();
         private static Dictionary<int, GameObject> _playerRagdolls = new Dictionary<int, GameObject>();
         private static bool _winSequenceInProgress = false;
         private static HashSet<int> _respawnInProgress = new HashSet<int>();
@@ -506,23 +506,29 @@ namespace GunGameMod
                     return false;
 
                 var runner = GameManager.Instance as MonoBehaviour ?? GunGamePlugin.Instance;
-                runner?.StartCoroutine(DeferredDropCleanup(__instance, obj, isPlaceable, playerId, weaponIndex));
+                runner?.StartCoroutine(DeferredDropCleanup(__instance, obj, isPlaceable, playerId, weaponIndex, rightHand));
             }
             catch { }
 
             return false;
         }
 
-        private static IEnumerator DeferredDropCleanup(PlayerPickup pickup, GameObject obj, bool isPlaceable, int playerId, int weaponIndex)
+        private static IEnumerator DeferredDropCleanup(PlayerPickup pickup, GameObject obj, bool isPlaceable, int playerId, int weaponIndex, bool rightHand)
         {
             yield return null;
 
             try
             {
-                pickup.sync___set_value_hasObjectInHand(false, true);
-                pickup.sync___set_value_hasObjectInLeftHand(false, true);
-                pickup.sync___set_value_objInHand(null, true);
-                pickup.sync___set_value_objInLeftHand(null, true);
+                if (rightHand)
+                {
+                    pickup.sync___set_value_hasObjectInHand(false, true);
+                    pickup.sync___set_value_objInHand(null, true);
+                }
+                else
+                {
+                    pickup.sync___set_value_hasObjectInLeftHand(false, true);
+                    pickup.sync___set_value_objInLeftHand(null, true);
+                }
             }
             catch { }
 
@@ -540,15 +546,16 @@ namespace GunGameMod
             if (playerId < 0 || GunGamePlugin.MatchOver) yield break;
             if (isPlaceable)
             {
-                if (!_pendingPlaceableReplace.Contains(playerId))
+                string replaceKey = GetHandReplaceKey(playerId, rightHand);
+                if (!_pendingPlaceableReplace.Contains(replaceKey))
                 {
-                    _pendingPlaceableReplace.Add(playerId);
+                    _pendingPlaceableReplace.Add(replaceKey);
                     var runner = GameManager.Instance as MonoBehaviour ?? GunGamePlugin.Instance;
-                    runner?.StartCoroutine(EnsurePlaceableReplaced(playerId));
+                    runner?.StartCoroutine(EnsurePlaceableReplaced(playerId, rightHand));
                 }
             }
             else
-                GunGameWeaponManager.GiveWeaponToPlayer(playerId, weaponIndex);
+                GunGameWeaponManager.ReplaceWeaponInHand(playerId, weaponIndex, rightHand);
         }
 
         private static IEnumerator DelayedKillWeaponGive(int killerId, int weaponIndex)
@@ -592,7 +599,7 @@ namespace GunGameMod
             catch { }
         }
 
-        private static IEnumerator EnsurePlaceableReplaced(int playerId)
+        private static IEnumerator EnsurePlaceableReplaced(int playerId, bool rightHand)
         {
             bool gave = false;
             try
@@ -604,10 +611,10 @@ namespace GunGameMod
                     if (GunGameWeaponManager.IsGivingWeapon(playerId)) continue;
                     var pickup = GunGamePlugin.FindPickupForPlayerId(playerId);
                     if (pickup == null) continue;
-                    if (!pickup.sync___get_value_hasObjectInHand())
+                    if (IsHandEmpty(pickup, rightHand))
                     {
                         int currentIndex = GetCurrentWeaponIndex(playerId);
-                        GunGameWeaponManager.GiveWeaponToPlayer(playerId, currentIndex);
+                        GunGameWeaponManager.ReplaceWeaponInHand(playerId, currentIndex, rightHand);
                         gave = true;
                     }
                     yield break;
@@ -616,14 +623,26 @@ namespace GunGameMod
                 if (!gave && !GunGamePlugin.MatchOver)
                 {
                     var pickup = GunGamePlugin.FindPickupForPlayerId(playerId);
-                    if (pickup != null && !pickup.sync___get_value_hasObjectInHand())
-                        GunGameWeaponManager.GiveWeaponToPlayer(playerId, GetCurrentWeaponIndex(playerId));
+                    if (pickup != null && IsHandEmpty(pickup, rightHand))
+                        GunGameWeaponManager.ReplaceWeaponInHand(playerId, GetCurrentWeaponIndex(playerId), rightHand);
                 }
             }
             finally
             {
-                _pendingPlaceableReplace.Remove(playerId);
+                _pendingPlaceableReplace.Remove(GetHandReplaceKey(playerId, rightHand));
             }
+        }
+
+        private static string GetHandReplaceKey(int playerId, bool rightHand) => playerId + (rightHand ? ":R" : ":L");
+
+        private static bool IsHandEmpty(PlayerPickup pickup, bool rightHand)
+        {
+            if (pickup == null)
+                return false;
+
+            return rightHand
+                ? !pickup.sync___get_value_hasObjectInHand()
+                : !pickup.sync___get_value_hasObjectInLeftHand();
         }
 
         public static bool RoundManager_CmdEndRound_Prefix(int winningTeamId)
