@@ -45,6 +45,9 @@ namespace GunGameMod
         private float _nextDropdownResizeTime = 0f;
         private static Dictionary<string, string[]> WeaponConfigValueToNames = new Dictionary<string, string[]>(StringComparer.Ordinal);
         private static Dictionary<string, GameObject> ResourceWeaponPrefabs = new Dictionary<string, GameObject>(StringComparer.Ordinal);
+        private static HashSet<string> MissingResourceWeaponNames = new HashSet<string>(StringComparer.Ordinal);
+        private static GameObject[] CachedResourceWeapons = new GameObject[0];
+        private static bool ResourceWeaponsLoaded = false;
 
         private static readonly string[] DefaultWeaponNames = new[]
         {
@@ -421,14 +424,19 @@ namespace GunGameMod
 
         private static GameObject[] LoadResourceWeapons()
         {
-            return Resources.LoadAll<GameObject>("RandomWeapons") ?? new GameObject[0];
+            RefreshResourceWeapons();
+            return CachedResourceWeapons;
         }
 
-        private static void RefreshResourceWeapons()
+        private static void RefreshResourceWeapons(bool force = false)
         {
-            var prefabs = new Dictionary<string, GameObject>(StringComparer.Ordinal);
+            if (ResourceWeaponsLoaded && !force)
+                return;
 
-            foreach (var weapon in LoadResourceWeapons())
+            var prefabs = new Dictionary<string, GameObject>(StringComparer.Ordinal);
+            GameObject[] weapons = Resources.LoadAll<GameObject>("RandomWeapons") ?? new GameObject[0];
+
+            foreach (var weapon in weapons)
             {
                 if (weapon == null)
                     continue;
@@ -438,7 +446,11 @@ namespace GunGameMod
                     prefabs.Add(weaponName, weapon);
             }
 
+            CachedResourceWeapons = weapons;
             ResourceWeaponPrefabs = prefabs;
+            MissingResourceWeaponNames.Clear();
+            ResourceWeaponsLoaded = true;
+            Log?.LogInfo($"Cached {ResourceWeaponPrefabs.Count} Gun Game resource weapons.");
         }
 
         private static bool TryGetResourceWeaponPrefab(string weaponName, out GameObject prefab)
@@ -449,11 +461,16 @@ namespace GunGameMod
                 return false;
 
             weaponName = weaponName.Replace("(Clone)", "").Trim();
+            RefreshResourceWeapons();
+
+            if (MissingResourceWeaponNames.Contains(weaponName))
+                return false;
+
             if (ResourceWeaponPrefabs.TryGetValue(weaponName, out prefab))
                 return true;
 
-            RefreshResourceWeapons();
-            return ResourceWeaponPrefabs.TryGetValue(weaponName, out prefab);
+            MissingResourceWeaponNames.Add(weaponName);
+            return false;
         }
 
         private void WidenModMenuDropdowns()
