@@ -526,14 +526,18 @@ namespace GunGameMod
             bool isPlaceable = IsPlaceableDrop(droppedName);
             bool isThrowable = IsThrowableDrop(droppedName);
 
-            if ((isPlaceable || isThrowable) && obj != null)
-                obj.transform.SetParent(null);
-
             try
             {
                 var client = __instance.playerValues?.sync___get_value_playerClient();
                 int playerId = client?.PlayerId ?? -1;
                 int weaponIndex = playerId >= 0 ? GetCurrentWeaponIndex(playerId) : 0;
+                bool isHeldObject = IsHeldObjectForHand(__instance, obj, rightHand);
+
+                if ((isPlaceable || isThrowable) && obj != null)
+                    obj.transform.SetParent(null);
+
+                if (!isHeldObject)
+                    return true;
 
                 if (playerId >= 0 && GunGameWeaponManager.IsDropProtected(playerId) &&
                     IsProtectedHeldDrop(__instance, obj, rightHand))
@@ -545,6 +549,18 @@ namespace GunGameMod
             catch { }
 
             return false;
+        }
+
+        private static bool IsHeldObjectForHand(PlayerPickup pickup, GameObject obj, bool rightHand)
+        {
+            if (pickup == null || obj == null)
+                return false;
+
+            GameObject held = rightHand
+                ? pickup.sync___get_value_objInHand()
+                : (pickup.sync___get_value_hasObjectInLeftHand() ? pickup.sync___get_value_objInLeftHand() : null);
+
+            return held == obj;
         }
 
         private static bool IsPlaceableDrop(string droppedName)
