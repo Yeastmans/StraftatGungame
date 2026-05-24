@@ -502,7 +502,8 @@ namespace GunGameMod
                 int playerId = client?.PlayerId ?? -1;
                 int weaponIndex = playerId >= 0 ? GetCurrentWeaponIndex(playerId) : 0;
 
-                if (playerId >= 0 && (GunGameWeaponManager.IsGivingWeapon(playerId) || GunGameWeaponManager.IsDropProtected(playerId)))
+                if (playerId >= 0 && GunGameWeaponManager.IsDropProtected(playerId) &&
+                    IsProtectedHeldDrop(__instance, obj, rightHand))
                     return false;
 
                 var runner = GameManager.Instance as MonoBehaviour ?? GunGamePlugin.Instance;
@@ -511,6 +512,26 @@ namespace GunGameMod
             catch { }
 
             return false;
+        }
+
+        private static bool IsProtectedHeldDrop(PlayerPickup pickup, GameObject obj, bool rightHand)
+        {
+            if (pickup == null || obj == null)
+                return false;
+
+            GameObject held = rightHand
+                ? pickup.sync___get_value_objInHand()
+                : (pickup.sync___get_value_hasObjectInLeftHand() ? pickup.sync___get_value_objInLeftHand() : null);
+
+            if (held != obj)
+                return false;
+
+            var weapon = obj.GetComponent<Weapon>();
+            if (weapon == null)
+                return false;
+
+            try { return weapon.sync___get_value_currentAmmo() > 0; }
+            catch { return false; }
         }
 
         private static IEnumerator DeferredDropCleanup(PlayerPickup pickup, GameObject obj, bool isPlaceable, int playerId, int weaponIndex, bool rightHand)
