@@ -524,8 +524,9 @@ namespace GunGameMod
 
             string droppedName = obj != null ? obj.name.Replace("(Clone)", "").Trim() : "";
             bool isPlaceable = IsPlaceableDrop(droppedName);
+            bool isThrowable = IsThrowableDrop(droppedName);
 
-            if (isPlaceable && obj != null)
+            if ((isPlaceable || isThrowable) && obj != null)
                 obj.transform.SetParent(null);
 
             try
@@ -539,7 +540,7 @@ namespace GunGameMod
                     return false;
 
                 var runner = GameManager.Instance as MonoBehaviour ?? GunGamePlugin.Instance;
-                runner?.StartCoroutine(DeferredDropCleanup(__instance, obj, isPlaceable, playerId, weaponIndex, rightHand));
+                runner?.StartCoroutine(DeferredDropCleanup(__instance, obj, isPlaceable, isThrowable, playerId, weaponIndex, rightHand));
             }
             catch { }
 
@@ -549,8 +550,13 @@ namespace GunGameMod
         private static bool IsPlaceableDrop(string droppedName)
         {
             return droppedName == "Claymore" || droppedName == "ProximityMine" ||
-                   droppedName == "APMine" || droppedName == "HandGrenade" || droppedName == "GlandGrenade" ||
-                   droppedName == "Teleport Mine" || droppedName == "TPTrap" || droppedName == "tptrap" ||
+                   droppedName == "APMine" ||
+                   droppedName == "Teleport Mine" || droppedName == "TPTrap" || droppedName == "tptrap";
+        }
+
+        private static bool IsThrowableDrop(string droppedName)
+        {
+            return droppedName == "HandGrenade" || droppedName == "GlandGrenade" ||
                    droppedName == "Repulsion Grenade" || droppedName == "RepulsionGrenade" ||
                    droppedName == "RepulsorGrenadeMerged" || droppedName == "KBGrenade" ||
                    droppedName == "repulsiongrenade";
@@ -576,7 +582,7 @@ namespace GunGameMod
             catch { return false; }
         }
 
-        private static IEnumerator DeferredDropCleanup(PlayerPickup pickup, GameObject obj, bool isPlaceable, int playerId, int weaponIndex, bool rightHand)
+        private static IEnumerator DeferredDropCleanup(PlayerPickup pickup, GameObject obj, bool isPlaceable, bool isThrowable, int playerId, int weaponIndex, bool rightHand)
         {
             yield return null;
 
@@ -595,7 +601,7 @@ namespace GunGameMod
             }
             catch { }
 
-            if (!isPlaceable && obj != null)
+            if (!isPlaceable && !isThrowable && obj != null)
             {
                 var netObj = obj.GetComponent<NetworkObject>();
                 if (netObj != null && netObj.IsSpawned)
