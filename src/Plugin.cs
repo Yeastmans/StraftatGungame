@@ -41,6 +41,7 @@ namespace GunGameMod
         private const int WeaponSlotCount = 100;
         private const string NoSecondWeapon = "None";
         private const float ModMenuDropdownWidth = 332f;
+        private const float ModMenuDropdownWidthTolerance = 1f;
         private float _nextDropdownResizeTime = 0f;
         private static Dictionary<string, string[]> WeaponConfigValueToNames = new Dictionary<string, string[]>(StringComparer.Ordinal);
         private static Dictionary<string, GameObject> ResourceWeaponPrefabs = new Dictionary<string, GameObject>(StringComparer.Ordinal);
@@ -286,6 +287,7 @@ namespace GunGameMod
                 Log?.LogWarning($"Could not discover resource weapons for config dropdowns: {ex.GetType().Name}");
             }
 
+            names.Sort(StringComparer.OrdinalIgnoreCase);
             return BuildWeaponConfigValues(names);
         }
 
@@ -498,7 +500,7 @@ namespace GunGameMod
 
         private static void WidenRect(RectTransform rect)
         {
-            if (rect == null || rect.rect.width >= ModMenuDropdownWidth)
+            if (rect == null || Mathf.Abs(rect.rect.width - ModMenuDropdownWidth) <= ModMenuDropdownWidthTolerance)
                 return;
 
             rect.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, ModMenuDropdownWidth);
@@ -509,9 +511,9 @@ namespace GunGameMod
             if (layout == null)
                 return;
 
-            layout.minWidth = Mathf.Max(layout.minWidth, ModMenuDropdownWidth);
-            layout.preferredWidth = Mathf.Max(layout.preferredWidth, ModMenuDropdownWidth);
-            layout.flexibleWidth = Mathf.Max(layout.flexibleWidth, 1f);
+            layout.minWidth = ModMenuDropdownWidth;
+            layout.preferredWidth = ModMenuDropdownWidth;
+            layout.flexibleWidth = 0f;
         }
 
         private static void WidenText(TMP_Text text)
