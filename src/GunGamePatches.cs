@@ -531,7 +531,8 @@ namespace GunGameMod
                 var client = __instance.playerValues?.sync___get_value_playerClient();
                 int playerId = client?.PlayerId ?? -1;
                 int weaponIndex = playerId >= 0 ? GetCurrentWeaponIndex(playerId) : 0;
-                bool isHeldObject = IsHeldObjectForHand(__instance, obj, rightHand);
+                bool actualRightHand;
+                bool isHeldObject = TryGetHeldObjectHand(__instance, obj, out actualRightHand);
 
                 if ((isPlaceable || isThrowable) && obj != null)
                     obj.transform.SetParent(null);
@@ -540,27 +541,34 @@ namespace GunGameMod
                     return true;
 
                 if (playerId >= 0 && GunGameWeaponManager.IsDropProtected(playerId) &&
-                    IsProtectedHeldDrop(__instance, obj, rightHand))
+                    IsProtectedHeldDrop(__instance, obj, actualRightHand))
                     return false;
 
                 var runner = GameManager.Instance as MonoBehaviour ?? GunGamePlugin.Instance;
-                runner?.StartCoroutine(DeferredDropCleanup(__instance, obj, isPlaceable, isThrowable, playerId, weaponIndex, rightHand));
+                runner?.StartCoroutine(DeferredDropCleanup(__instance, obj, isPlaceable, isThrowable, playerId, weaponIndex, actualRightHand));
             }
             catch { }
 
             return false;
         }
 
-        private static bool IsHeldObjectForHand(PlayerPickup pickup, GameObject obj, bool rightHand)
+        private static bool TryGetHeldObjectHand(PlayerPickup pickup, GameObject obj, out bool rightHand)
         {
+            rightHand = true;
+
             if (pickup == null || obj == null)
                 return false;
 
-            GameObject held = rightHand
-                ? pickup.sync___get_value_objInHand()
-                : (pickup.sync___get_value_hasObjectInLeftHand() ? pickup.sync___get_value_objInLeftHand() : null);
+            if (pickup.sync___get_value_objInHand() == obj)
+                return true;
 
-            return held == obj;
+            if (pickup.sync___get_value_hasObjectInLeftHand() && pickup.sync___get_value_objInLeftHand() == obj)
+            {
+                rightHand = false;
+                return true;
+            }
+
+            return false;
         }
 
         private static bool IsPlaceableDrop(string droppedName)
